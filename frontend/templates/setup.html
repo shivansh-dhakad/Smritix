@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Smritix — Setup</title>
+<link rel="icon" href="/static/images/logo.png"/>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{height:100%;-webkit-font-smoothing:antialiased}
+body{
+  background:#0a0a0a;color:#efefef;
+  font-family:'DM Sans',system-ui,sans-serif;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+
+/* Ambient glow blobs */
+.blob{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0}
+.blob-1{width:600px;height:600px;background:rgba(124,106,247,.12);top:-200px;left:-200px;animation:drift1 10s ease-in-out infinite alternate}
+.blob-2{width:500px;height:500px;background:rgba(0,212,188,.08);bottom:-150px;right:-150px;animation:drift2 12s ease-in-out infinite alternate}
+.blob-3{width:400px;height:400px;background:rgba(245,166,35,.06);top:50%;left:50%;transform:translate(-50%,-50%);animation:drift3 8s ease-in-out infinite alternate}
+@keyframes drift1{to{transform:translate(60px,40px)}}
+@keyframes drift2{to{transform:translate(-50px,-30px)}}
+@keyframes drift3{0%{transform:translate(-50%,-50%) scale(1)}100%{transform:translate(-50%,-50%) scale(1.15)}}
+
+.card{
+  position:relative;z-index:1;
+  background:#161616;border:1px solid #252525;
+  border-radius:22px;padding:44px 48px;
+  max-width:520px;width:calc(100% - 32px);
+  box-shadow:0 24px 80px rgba(0,0,0,.8);
+  text-align:center;
+}
+
+.logo-wrap{margin-bottom:20px}
+.logo{
+  width:88px;height:88px;object-fit:contain;
+  animation:float 4s ease-in-out infinite;
+  filter:drop-shadow(0 0 24px rgba(124,106,247,.5));
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+
+h1{
+  font-size:2rem;font-weight:800;letter-spacing:-.04em;
+  background:linear-gradient(135deg,#9d8fff 0%,#f5a623 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:4px;
+}
+.tagline{
+  font-size:.75rem;color:#505050;letter-spacing:.18em;
+  text-transform:uppercase;margin-bottom:28px;
+}
+
+/* Info box */
+.info-box{
+  background:#111111;border:1px solid #252525;border-radius:12px;
+  padding:18px 20px;margin-bottom:18px;text-align:left;
+}
+.info-box p{font-size:.85rem;color:#888;line-height:1.75;margin-bottom:8px}
+.info-box p:last-child{margin-bottom:0}
+.info-box strong{color:#efefef}
+
+/* Privacy badge */
+.privacy-badge{
+  display:flex;align-items:flex-start;gap:12px;
+  background:#0d1a17;border:1px solid rgba(0,212,188,.2);
+  border-radius:10px;padding:13px 16px;margin-bottom:24px;text-align:left;
+}
+.privacy-icon{font-size:1.3rem;flex-shrink:0;margin-top:1px}
+.privacy-text{font-size:.81rem;color:#5eead4;line-height:1.6}
+
+/* Buttons */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:13px 28px;border-radius:10px;font-size:.92rem;font-weight:700;
+  cursor:pointer;border:none;transition:all .16s;width:100%;margin-bottom:10px;
+  font-family:'DM Sans',sans-serif;
+}
+.btn-primary{
+  background:linear-gradient(135deg,#7c6af7,#9d8fff);color:#fff;
+  box-shadow:0 4px 20px rgba(124,106,247,.3);
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(124,106,247,.45)}
+.btn-primary:active{transform:translateY(0)}
+.btn-ghost{
+  background:transparent;color:#555;
+  border:1px solid #252525;font-size:.84rem;
+}
+.btn-ghost:hover{background:#1c1c1c;color:#888;border-color:#333}
+
+.guidelines-link{color:#7c6af7;font-size:.78rem;text-decoration:none;display:inline-block;margin-top:6px;opacity:.7;transition:opacity .15s}
+.guidelines-link:hover{opacity:1;text-decoration:underline}
+
+/* Loading screen */
+#loading-screen{display:none}
+#welcome-screen{display:block}
+
+/* Progress */
+.progress-wrap{background:#1c1c1c;border-radius:99px;height:6px;overflow:hidden;margin:20px 0 14px}
+.progress-bar{height:100%;background:linear-gradient(90deg,#7c6af7,#00d4bc,#f5a623);background-size:200% 100%;width:0%;transition:width .4s ease;animation:shimmer 2s linear infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Dep list */
+.dep-list{text-align:left;max-height:200px;overflow-y:auto;margin-bottom:16px}
+.dep-item{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;border-radius:8px;font-size:.81rem;
+  margin-bottom:3px;background:#111;border:1px solid transparent;
+  transition:all .2s;
+}
+.dep-item.done{border-color:rgba(0,212,188,.2);background:#0d1a17}
+.dep-item.done .dep-icon{color:#22c55e}
+.dep-item.active{border-color:rgba(124,106,247,.25);background:#14123a;animation:pulse .9s ease-in-out infinite}
+.dep-item.active .dep-icon{color:#7c6af7;animation:spin .7s linear infinite;display:inline-block}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.dep-icon{width:16px;text-align:center;flex-shrink:0}
+.dep-label{color:#888}
+.dep-item.done .dep-label{color:#efefef}
+
+.status-text{color:#555;font-size:.82rem;min-height:20px;margin-bottom:6px}
+.error-msg{
+  color:#fca5a5;background:#1a0808;
+  border:1px solid rgba(239,68,68,.3);
+  border-radius:8px;padding:11px 14px;
+  font-size:.82rem;margin-bottom:14px;display:none;
+  text-align:left;
+}
+
+#enter-btn{display:none}
+#retry-btn{display:none}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#252525;border-radius:99px}
+</style>
+</head>
+<body>
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<div class="card">
+  <!-- Welcome screen -->
+  <div id="welcome-screen">
+    <div class="logo-wrap">
+      <img src="/static/images/logo.png" class="logo" alt="Smritix"/>
+    </div>
+    <h1>Smritix</h1>
+    <p class="tagline">Capture · Organize · Create</p>
+
+    <div class="info-box">
+      <p>Welcome! Smritix is a <strong>local-first knowledge app</strong> — your notes and projects live on your machine, nowhere else.</p>
+      <p>Click below to initialize the database, set up storage directories, and start the app.</p>
+    </div>
+
+    <div class="privacy-badge">
+      <span class="privacy-icon">🔒</span>
+      <span class="privacy-text">All data is stored locally in your AppData folder. <strong>No internet connection required.</strong> No accounts. No telemetry.</span>
+    </div>
+
+    <button class="btn btn-primary" id="allow-btn">✅ Allow &amp; Launch Smritix</button>
+    <button class="btn btn-ghost" id="decline-btn">Not now</button>
+    <br/>
+    <a href="#" class="guidelines-link" id="guide-link">📖 What gets set up &amp; how it works →</a>
+  </div>
+
+  <!-- Loading / setup progress -->
+  <div id="loading-screen">
+    <div class="logo-wrap">
+      <img src="/static/images/logo.png" class="logo" alt="Smritix" style="width:56px;height:56px"/>
+    </div>
+    <h1 style="font-size:1.4rem;margin-bottom:6px" id="loading-title">Setting up Smritix…</h1>
+    <p class="status-text" id="status-text">Initializing…</p>
+
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <div class="dep-list" id="dep-list"></div>
+    <div class="error-msg" id="error-msg"></div>
+
+    <button class="btn btn-primary" id="enter-btn" onclick="enterApp()" style="margin-top:4px">
+      🚀 Open Smritix
+    </button>
+    <button class="btn btn-ghost" id="retry-btn" onclick="startSetup()" style="margin-top:4px">
+      🔄 Retry Setup
+    </button>
+  </div>
+</div>
+
+<script>
+const STEPS = [
+  { id:'check_env',    label:'Checking Python environment',      ms: 500 },
+  { id:'init_db',      label:'Initializing SQLite database',     ms: 800 },
+  { id:'fts_index',    label:'Building FTS5 search index',       ms: 600 },
+  { id:'dirs',         label:'Creating storage directories',     ms: 400 },
+  { id:'markdown',     label:'Loading Markdown renderer',        ms: 350 },
+  { id:'backup_sys',   label:'Configuring auto-backup',          ms: 400 },
+  { id:'health',       label:'Running server health check',      ms: 700 },
+];
+
+document.getElementById('allow-btn').onclick  = startSetup;
+document.getElementById('decline-btn').onclick = () => window.close();
+document.getElementById('guide-link').onclick  = (e) => {
+  e.preventDefault();
+  alert(
+    '📖 Smritix Setup Guide\n\n' +
+    '✅ What gets created:\n' +
+    '  • SQLite database in AppData/Smritix/smritix.db\n' +
+    '  • Files folder: AppData/Smritix/files/\n' +
+    '  • Backups folder: AppData/Smritix/backups/\n\n' +
+    '🔒 Privacy:\n' +
+    '  • Zero network access required\n' +
+    '  • All data is 100% on your device\n' +
+    '  • Auto-backup every hour\n\n' +
+    '⚡ Features:\n' +
+    '  • Markdown notes with live preview\n' +
+    '  • Project file explorer\n' +
+    '  • Full-text search (FTS5)\n' +
+    '  • Version history for notes'
+  );
+};
+
+function startSetup(){
+  document.getElementById('welcome-screen').style.display = 'none';
+  document.getElementById('loading-screen').style.display = 'block';
+  document.getElementById('error-msg').style.display      = 'none';
+  document.getElementById('retry-btn').style.display      = 'none';
+  document.getElementById('enter-btn').style.display      = 'none';
+  runSteps();
+}
+
+async function runSteps(){
+  const list = document.getElementById('dep-list');
+  const bar  = document.getElementById('progress-bar');
+  const stat = document.getElementById('status-text');
+  list.innerHTML = '';
+
+  STEPS.forEach(s => {
+    const el = document.createElement('div');
+    el.className = 'dep-item';
+    el.id = 'step-' + s.id;
+    el.innerHTML = `<span class="dep-icon">○</span><span class="dep-label">${s.label}</span>`;
+    list.appendChild(el);
+  });
+
+  for(let i = 0; i < STEPS.length; i++){
+    const s   = STEPS[i];
+    const el  = document.getElementById('step-' + s.id);
+    el.className = 'dep-item active';
+    el.querySelector('.dep-icon').textContent = '◌';
+    stat.textContent = s.label + '…';
+    bar.style.width  = Math.round((i / STEPS.length) * 100) + '%';
+
+    try {
+      await sleep(s.ms);
+      if(s.id === 'health'){
+        const r = await fetch('/api/health');
+        if(!r.ok) throw new Error('Server not responding');
+        const d = await r.json();
+        if(!d.success) throw new Error('Health check failed');
+      }
+      el.className = 'dep-item done';
+      el.querySelector('.dep-icon').textContent = '✓';
+    } catch(err){
+      el.className = 'dep-item';
+      el.querySelector('.dep-icon').textContent = '✗';
+      el.querySelector('.dep-icon').style.color = '#ef4444';
+      showError(err.message || 'Failed at: ' + s.label);
+      return;
+    }
+  }
+
+  bar.style.width = '100%';
+  stat.textContent = '✓ Setup complete!';
+  document.getElementById('loading-title').textContent = 'Ready to launch!';
+
+  await fetch('/api/settings', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({setup_complete:'true'})
+  }).catch(()=>{});
+
+  document.getElementById('enter-btn').style.display = 'flex';
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+function showError(msg){
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+  document.getElementById('retry-btn').style.display = 'flex';
+  document.getElementById('status-text').textContent = 'Setup failed — check the error above.';
+}
+
+function enterApp(){ window.location.href = '/'; }
+</script>
+</body>
+</html>
