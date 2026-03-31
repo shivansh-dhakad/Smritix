@@ -199,20 +199,122 @@ def upload_file(pid):
             except ValueError as e:
                 return jsonify(err(str(e))[0]), 400
 
+            # Ensure parent directories exist in DB
+            actual_parent_id = parent_id
+            if rel_path:
+                dir_path = os.path.dirname(rel_path)
+                if dir_path:
+                    parts = dir_path.replace('\\', '/').split('/')
+                    current_path = base
+                    for part in parts:
+                        if not part: continue
+                        current_path = os.path.join(current_path, part)
+                        
+                        # Look for existing dir record with the specified parent
+                        if actual_parent_id is None:
+                            row = conn.execute(
+                                "SELECT id FROM project_files WHERE project_id=? AND name=? AND is_dir=1 AND parent_id IS NULL",
+                                (pid, part)
+                            ).fetchone()
+                        else:
+                            row = conn.execute(
+                                "SELECT id FROM project_files WHERE project_id=? AND name=? AND is_dir=1 AND parent_id=?",
+                                (pid, part, actual_parent_id)
+                            ).fetchone()
+                        
+                        if row:
+                            actual_parent_id = row["id"]
+                        else:
+                            os.makedirs(current_path, exist_ok=True)
+                            cur_dir = conn.execute(
+                                "INSERT INTO project_files (project_id, name, filepath, parent_id, is_dir, mime_type, file_size) VALUES (?,?,?,?,1,'inode/directory',0)",
+                                (pid, part, current_path, actual_parent_id)
+                            )
+                            actual_parent_id = cur_dir.lastrowid
+
             os.makedirs(dest_dir, exist_ok=True)
             f.save(dest_path)
             size      = os.path.getsize(dest_path)
             mime      = detect_mime(safe_name)
-            cur       = conn.execute(
-                "INSERT INTO project_files (project_id,name,filepath,parent_id,is_dir,mime_type,file_size) VALUES (?,?,?,?,0,?,?)",
-                (pid, safe_name, dest_path, parent_id, mime, size)
-            )
-            return jsonify(ok(dict(conn.execute("SELECT * FROM project_files WHERE id=?", (cur.lastrowid,)).fetchone()))), 201
+            
+            # Check if file exists to overwrite it or create a new entry
+            existing_file = conn.execute(
+                "SELECT id FROM project_files WHERE project_id=? AND name=? AND is_dir=0 AND (parent_id=? OR (parent_id IS NULL AND ? IS NULL))",
+                (pid, safe_name, actual_parent_id, actual_parent_id)
+            ).fetchone()
+            
+            if existing_file:
+                cur = conn.execute(
+                    "UPDATE project_files SET file_size=?, mime_type=?, updated_at=datetime('now') WHERE id=?",
+                    (size, mime, existing_file["id"])
+                )
+                file_id = existing_file["id"]
+            else:
+                cur = conn.execute(
+                    "INSERT INTO project_files (project_id,name,filepath,parent_id,is_dir,mime_type,file_size) VALUES (?,?,?,?,0,?,?)",
+                    (pid, safe_name, dest_path, actual_parent_id, mime, size)
+                )
+                file_id = cur.lastrowid
+                
+            return jsonify(ok(dict(conn.execute("SELECT * FROM project_files WHERE id=?", (file_id,)).fetchone()))), 201
     except Exception as exc:
         logger.error("upload_file: %s", exc)
         return jsonify(err(str(exc))[0]), 500
 
+# ── POST /api/projects/<id>/mkdir ────────────────────────────────────────────
+@projects_bp.route("/<int:pid>/mkdir", methods=["POST"])
+def create_folder(pid):
+    try:
+        from database import db_session
+        data      = request.get_json(force=True) or {}
+        name      = sanitize_filename((data.get("name") or "").strip())
+        parent_id = data.get("parent_id") or None
 
+        if not name:
+            return jsonify(err("Folder name is required")[0]), 400
+
+        with db_session(_db()) as conn:
+            if not conn.execute("SELECT id FROM projects WHERE id=?", (pid,)).fetchone():
+                return jsonify(err("Project not found")[0]), 404
+
+            base = _proj_dir(pid)
+
+            # Determine parent path on disk
+            if parent_id:
+                parent_row = conn.execute(
+                    "SELECT filepath FROM project_files WHERE id=? AND project_id=? AND is_dir=1",
+                    (parent_id, pid)
+                ).fetchone()
+                if not parent_row:
+                    return jsonify(err("Parent folder not found")[0]), 404
+                try:
+                    folder_path = _safe_path(base, os.path.relpath(parent_row["filepath"], base), name)
+                except ValueError as e:
+                    return jsonify(err(str(e))[0]), 400
+            else:
+                folder_path = os.path.join(base, name)
+
+            try:
+                _safe_path(base, os.path.relpath(folder_path, base))
+            except ValueError as e:
+                return jsonify(err(str(e))[0]), 400
+
+            if os.path.exists(folder_path):
+                return jsonify(err("Folder already exists")[0]), 409
+
+            os.makedirs(folder_path, exist_ok=True)
+
+            cur = conn.execute(
+                "INSERT INTO project_files (project_id, name, filepath, parent_id, is_dir, mime_type, file_size) VALUES (?,?,?,?,1,'inode/directory',0)",
+                (pid, name, folder_path, parent_id)
+            )
+            return jsonify(ok(dict(conn.execute(
+                "SELECT * FROM project_files WHERE id=?", (cur.lastrowid,)
+            ).fetchone()))), 201
+    except Exception as exc:
+        logger.error("create_folder: %s", exc)
+        return jsonify(err(str(exc))[0]), 500
+    
 # ── GET /api/projects/<id>/files/<fid>/content ───────────────────────────────
 @projects_bp.route("/<int:pid>/files/<int:fid>/content", methods=["GET"])
 def get_file_content(pid, fid):
@@ -247,9 +349,31 @@ def get_file_content(pid, fid):
                     return jsonify(ok({"is_notebook": False, "is_text": True,
                                        "mime_type": row["mime_type"], "content": f.read()}))
 
-            # Binary — stream it
+            # Binary — Return JSON
+            return jsonify(ok({"is_notebook": False, "is_text": False, "mime_type": row["mime_type"], "download_url": f"/api/projects/{pid}/files/{fid}/download"}))
+    except Exception as exc:
+        logger.error("get_file_content: %s", exc)
+        return jsonify(err(str(exc))[0]), 500
+
+
+# ── GET /api/projects/<id>/files/<fid>/download ──────────────────────────────
+@projects_bp.route("/<int:pid>/files/<int:fid>/download", methods=["GET"])
+def download_file(pid, fid):
+    try:
+        from database import db_session
+        with db_session(_db()) as conn:
+            row = conn.execute("SELECT * FROM project_files WHERE id=? AND project_id=?", (fid, pid)).fetchone()
+            if not row: return jsonify(err("File not found")[0]), 404
+            if row["is_dir"]: return jsonify(err("Cannot download directory")[0]), 400
+            fp = row["filepath"]
+            if not os.path.exists(fp): return jsonify(err("File missing on disk")[0]), 404
+            try: _safe_path(_proj_dir(pid), os.path.relpath(fp, _proj_dir(pid)))
+            except ValueError: return jsonify(err("Access denied")[0]), 403
+            
             return send_file(fp, as_attachment=False)
     except Exception as exc:
+        logger.error("download_file: %s", exc)
+        return jsonify(err(str(exc))[0]), 500
         logger.error("get_file_content: %s", exc)
         return jsonify(err(str(exc))[0]), 500
 
@@ -295,3 +419,4 @@ def delete_file(pid, fid):
     except Exception as exc:
         logger.error("delete_file: %s", exc)
         return jsonify(err(str(exc))[0]), 500
+

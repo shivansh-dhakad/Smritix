@@ -241,12 +241,21 @@ def run_project(project_id):
                     return jsonify(err(f"Cannot run .{ext} files: {ex}")[0]), 400
 
             work_dir = os.path.dirname(local_path) if os.path.isfile(local_path) else local_path
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=work_dir,
-            )
+            
+            if os.name == "nt" and ext in (".py", ".js", ".rb", ".r", ".sh", ".bat", ".exe"):
+                cmd = ["cmd.exe", "/c", "start", "cmd.exe", "/k"] + cmd
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=work_dir,
+                    shell=True
+                )
+            else:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=work_dir,
+                )
             return jsonify(ok({"pid": proc.pid, "path": local_path, "cmd": " ".join(cmd)}))
     except Exception as exc:
         logger.error("run_project error: %s", exc)

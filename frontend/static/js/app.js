@@ -278,6 +278,7 @@ async function renderCourseView(course) {
           <button class="topbar-btn primary" onclick="window._newSection(${course.id})">＋ Section</button>
           <button class="topbar-btn primary" onclick="window._newNote(${course.id},null)">＋ Note</button>
           <button class="topbar-btn primary" onclick="window._newProject(${course.id},null)">＋ Project</button>
+          <button class="topbar-btn" onclick="window._downloadPdf(${course.id})">🖨️ PDF</button>
         </div>
       </div>
       ${topSections.length ? `<div class="content-section"><div class="content-section-title">📂 Sections</div><div class="items-grid">${topSections.map(s => sectionCard(s)).join('')}</div></div>` : ''}
@@ -306,6 +307,7 @@ async function renderSectionView(section) {
           <button class="topbar-btn primary" onclick="window._newSection(${S.currentCourse.id},${section.id})">＋ Sub-section</button>
           <button class="topbar-btn primary" onclick="window._newNote(${S.currentCourse.id},${section.id})">＋ Note</button>
           <button class="topbar-btn primary" onclick="window._newProject(${S.currentCourse.id},${section.id})">＋ Project</button>
+          <button class="topbar-btn" onclick="window._downloadPdf(${S.currentCourse.id}, ${section.id})">🖨️ PDF</button>
         </div>
       </div>
       ${children.length ? `<div class="content-section"><div class="content-section-title">📂 Sub-sections</div><div class="items-grid">${children.map(s => sectionCard(s)).join('')}</div></div>` : ''}
@@ -711,7 +713,10 @@ async function renderProjectView(project) {
           <div class="file-explorer-header">
             <span class="file-explorer-title">📁 ${escapeHtml(proj.name)}</span>
             <span style="font-size:.72rem;color:var(--t3);font-family:'JetBrains Mono',monospace">${files.length} items</span>
-            <button class="topbar-btn" onclick="window._uploadFiles(${proj.id})" style="margin-left:auto">⬆️ Upload</button>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+              <button class="topbar-btn" onclick="window._uploadFiles(${proj.id})">⬆️ Files</button>
+              <button class="topbar-btn" onclick="window._uploadFolder(${proj.id})">⬆️ Folder</button>
+            </div>
           </div>
           <div id="file-tree-root">${renderFileTree(files, proj.id)}</div>
         </div>
@@ -761,6 +766,76 @@ async function renderProjectView(project) {
   } catch (e) { toast('Failed to load project: ' + e.message, 'error'); }
 }
 
+async function getFilesFromDataTransfer(dataTransfer) {
+  const files = [];
+  async function readEntry(entry, path) {
+    if (entry.isFile) {
+      return new Promise(resolve => {
+        entry.file(file => {
+          files.push({ file: file, rel_path: path + file.name });
+          resolve();
+        });
+      });
+    } else if (entry.isDirectory) {
+      const dirReader = entry.createReader();
+      return new Promise(resolve => {
+        let entries = [];
+        function readNext() {
+          dirReader.readEntries(async results => {
+            if (results.length) {
+              entries = entries.concat(results);
+              readNext();
+            } else {
+              for (const e of entries) {
+                await readEntry(e, path + entry.name + '/');
+              }
+              resolve();
+            }
+          });
+        }
+        readNext();
+      });
+    }
+  }
+
+  const promises = [];
+  if (dataTransfer.items) {
+    for (let i = 0; i < dataTransfer.items.length; i++) {
+      const item = dataTransfer.items[i];
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (entry) {
+          promises.push(readEntry(entry, ''));
+        }
+      }
+    }
+  }
+  await Promise.all(promises);
+  return files;
+}
+
+function setupDropZone(pid) {
+  const zone = document.getElementById(`drop-zone-${pid}`);
+  if (!zone) return;
+  zone.onclick = () => window._uploadFiles(pid);
+  zone.ondragover = e => { e.preventDefault(); zone.classList.add('drag-over'); };
+  zone.ondragleave = e => { e.preventDefault(); zone.classList.remove('drag-over'); };
+  zone.ondrop = async e => { 
+    e.preventDefault(); 
+    zone.classList.remove('drag-over'); 
+    if (e.dataTransfer.items) {
+      const files = await getFilesFromDataTransfer(e.dataTransfer);
+      if (files.length > 0) {
+        await uploadFilesTo(pid, files);
+      } else if (e.dataTransfer.files.length > 0) {
+        await uploadFilesTo(pid, Array.from(e.dataTransfer.files));
+      }
+    } else {
+      await uploadFilesTo(pid, Array.from(e.dataTransfer.files)); 
+    }
+  };
+}
+
 window.switchProjectTab = (tab) => {
   ['files', 'info'].forEach(t => {
     const btn = document.getElementById(`tab-${t}`);
@@ -806,14 +881,6 @@ window._toggleDir = async (pid, dirId, rowEl) => {
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 };
 
-function setupDropZone(pid) {
-  const zone = document.getElementById(`drop-zone-${pid}`);
-  if (!zone) return;
-  zone.ondragover = e => { e.preventDefault(); zone.classList.add('drag-over'); };
-  zone.ondragleave = () => zone.classList.remove('drag-over');
-  zone.ondrop = async e => { e.preventDefault(); zone.classList.remove('drag-over'); await uploadFilesTo(pid, Array.from(e.dataTransfer.files)); };
-  zone.onclick = () => window._uploadFiles(pid);
-}
 
 // ── File tabs ─────────────────────────────────────────────────────────────────
 window._openFile = async (pid, fid, name) => {
@@ -833,7 +900,14 @@ window._openFile = async (pid, fid, name) => {
       return;
     }
 
-    if (!data.is_text) { toast('Binary file — cannot display in browser', 'info'); return; }
+    if (!data.is_text) {
+      if (data.download_url) {
+        window.open(data.download_url, '_blank');
+      } else {
+        toast('Binary file — cannot display in browser', 'info');
+      }
+      return;
+    }
 
     panel.style.display = 'block';
     addFileTab(fid, name, pid);
@@ -897,10 +971,22 @@ window._uploadFiles = pid => {
   input.click();
 };
 
-async function uploadFilesTo(pid, files) {
+window._uploadFolder = pid => {
+  const input = document.createElement('input'); input.type = 'file';
+  input.webkitdirectory = true; input.multiple = true;
+  input.onchange = async () => { if (input.files.length) await uploadFilesTo(pid, Array.from(input.files), true); };
+  input.click();
+};
+
+async function uploadFilesTo(pid, files, isFolder = false) {
   let ok = 0, fail = 0;
-  for (const f of files) {
+  for (const item of files) {
+    const f = item.file || item;
+    const relPath = item.rel_path || (isFolder && f.webkitRelativePath ? f.webkitRelativePath : null);
     const form = new FormData(); form.append('file', f);
+    if (relPath) {
+      form.append('rel_path', relPath);
+    }
     try { await Projects.upload(pid, form); ok++; }
     catch (e) { fail++; console.error('Upload failed:', f.name, e); }
   }
@@ -908,6 +994,89 @@ async function uploadFilesTo(pid, files) {
   if (fail) toast(`${fail} upload${fail > 1 ? 's' : ''} failed`, 'error');
   if (ok > 0 && S.currentProject) await renderProjectView(S.currentProject);
 }
+
+window._downloadPdf = async (courseId, sectionId = null) => {
+  try {
+    const [course, allSections, allNotes] = await Promise.all([
+      Courses.get(courseId),
+      Sections.list(courseId),
+      Notes.list(courseId)
+    ]);
+    
+    let sections = allSections;
+    let notes = allNotes;
+    
+    if (sectionId) {
+      const parentIds = new Set([sectionId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const s of allSections) {
+          if (s.parent_id && parentIds.has(s.parent_id) && !parentIds.has(s.id)) {
+            parentIds.add(s.id);
+            changed = true;
+          }
+        }
+      }
+      sections = sections.filter(s => parentIds.has(s.id));
+      notes = notes.filter(n => n.section_id && parentIds.has(n.section_id));
+    }
+
+    let html = `<html><head><title>${escapeHtml(course.name)} - Notes</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+      h1 { border-bottom: 2px solid #ccc; padding-bottom: 5px; page-break-after: avoid; }
+      h2 { color: #555; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 5px; page-break-after: avoid; page-break-before: always; }
+      h3 { color: #666; page-break-after: avoid; }
+      .note-content { margin-bottom: 40px; }
+      img { max-width: 100%; height: auto; }
+      pre { background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; }
+      @media print {
+        body { padding: 0; }
+        .no-print { display: none; }
+      }
+    </style></head><body>`;
+    
+    html += `<h1>${escapeHtml(course.name)}</h1>`;
+    html += `<p>${escapeHtml(course.description || '')}</p>`;
+    
+    const notesBySection = {};
+    for (const n of notes) {
+      const sid = n.section_id || 'unassigned';
+      if (!notesBySection[sid]) notesBySection[sid] = [];
+      notesBySection[sid].push(n);
+    }
+    
+    const renderSectionOpts = (sid, title) => {
+      let out = '';
+      if (notesBySection[sid] && notesBySection[sid].length > 0) {
+        if (title) out += `<h2>${escapeHtml(title)}</h2>`;
+        for (const n of notesBySection[sid]) {
+          out += `<h3>${escapeHtml(n.title)}</h3>`;
+          out += `<div class="note-content">${n.content}</div>`;
+        }
+      }
+      return out;
+    };
+    
+    if (notesBySection['unassigned']) {
+      html += renderSectionOpts('unassigned', null);
+    }
+    for (const s of sections) {
+      html += renderSectionOpts(s.id, s.name);
+    }
+    
+    html += `<script>window.onload = () => { setTimeout(() => { window.print(); }, 500); };</script></body></html>`;
+    
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    } else {
+      toast('Popup blocked! Please allow popups to generate PDF.', 'error');
+    }
+  } catch(e) { toast('Error generating PDF: ' + e.message, 'error'); }
+};
 
 window._runProject = async (id, type) => {
   if (type === 'local') {
